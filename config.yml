@@ -1,0 +1,499 @@
+version: 2.1
+jobs:
+  build_and_publish_testing:
+    machine:
+      docker_layer_caching: true
+    steps:
+      - checkout
+      - run:
+          name: Install sshpass
+          command: |
+            sudo apt-get update; sudo apt-get install -y sshpass
+            export NVM_DIR="/opt/circleci/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+            nvm install v10.16.3 && nvm use v10.16.3 && nvm alias default v10.16.3
+            sudo apt-get install -y npm awscli
+            npm install -g npm@latest
+            npm install -g  @elucidatainc/pollycli
+            echo 'export PATH=/opt/circleci/.nvm/versions/node/v10.16.3/bin:$PATH' >> $BASH_ENV
+            echo '
+            {
+                "environment": "test",
+                "baseApi": "https://api.testpolly.elucidata.io",
+                "baseV2Api": "https://v2.api.testpolly.elucidata.io",
+                "machines": {
+                    "gp": "4 vCPU, 16GB RAM",
+                    "ci2xlarge": "16 vCPU, 32GB RAM",
+                    "ci3xlarge": "36 vCPU, 72GB RAM",
+                    "mi2xlarge": "4 vCPU, 32GB RAM",
+                    "mi3xlarge": "8 vCPU, 64GB RAM"
+                }
+            }
+            ' > /opt/circleci/.nvm/versions/node/v10.16.3/lib/node_modules/@elucidatainc/pollycli/src/env.json
+            cat /opt/circleci/.nvm/versions/node/v10.16.3/lib/node_modules/@elucidatainc/pollycli/src/env.json
+      - run:
+          name: Login into polly cli
+          command: |
+            export AWS_ACCESS_KEY_ID=$BUILD_STORE_S3_ACCESS_KEY
+            export AWS_SECRET_ACCESS_KEY=$BUILD_STORE_S3_SECRET_KEY
+            mkdir -p $HOME/.config/pollycli/
+            aws s3 cp s3://$BUILD_STORE_S3_BUCKET_NAME/testcredentials.json $HOME/.config/pollycli/credentials.json
+            polly --version
+            polly whoami
+      - run:
+          name: Making a server detection file
+          command: touch ./.server
+      - run:
+          name: Pull the pollyHelperPackage
+          command: (git clone https://bitbucket.org/elucidatainc/pollyrhelper.git; cd pollyrhelper; git checkout testing; mv pollyHelper.R cwfHelper.R ../; cd .. ; rm -rf pollyrhelper/)
+      - run:
+          name: Docker pull 
+          command: | 
+            RVERSION=$(grep -o  "RVersion.*" ./packrat/packrat.lock | cut -d : -f 2 | sed 's/ //g' | sed 's/\./-/g')
+            docker pull mithoopolly/shinyserver_min_r_${RVERSION}:${DOCKER_TEST_TAG}
+      - run:
+          name: Saving packrat for after cache use
+          command: cp packrat/init.R packraInit.R; cp packrat/packrat.lock packrat.lock; cp packrat/packrat.opts packrat.opts;
+      - restore_cache:
+          keys:
+            - deps-v2-{{ checksum "packrat.lock" }}
+            - deps-v2-
+      - run:
+          name: Restore packrat for after cache use
+          command: |
+            RVERSION_NEW=$(grep -o  "RVersion.*" ./packrat.lock | cut -d : -f 2 | sed 's/ //g' | sed 's/\./-/g')
+            RVERSION_CACED=$(grep -o  "RVersion.*" ./packrat/packrat.lock | cut -d : -f 2 | sed 's/ //g' | sed 's/\./-/g')
+            if [ "$RVERSION_NEW" == "$RVERSION_CACED" ]; then
+              echo "R version is consistant"
+            else
+              echo "R version is not consistant. Removing the contents inside the packrat folder"
+              rm -rf ./packrat/*
+              exit 1
+            fi
+            mv packraInit.R packrat/init.R; mv packrat.lock packrat/packrat.lock; mv packrat.opts packrat/packrat.opts;
+      - run:
+          name: Docker build
+          command: |
+            RVERSION=$(grep -o  "RVersion.*" ./packrat/packrat.lock | cut -d : -f 2 | sed 's/ //g' | sed 's/\./-/g')
+            docker run -v $(pwd):/srv/ -e EXEC_MODE=build -p 81:3838  mithoopolly/shinyserver_min_r_${RVERSION}:${DOCKER_TEST_TAG}
+      - save_cache:
+          key: deps-v2-{{ checksum "packrat/packrat.lock" }}
+          paths:
+            - "packrat"
+      - run:
+          name: Removing things that are not needed for bundling
+          command: |
+            sudo rm -rf packrat/src/
+            sudo rm -rf .git/
+      - run:
+          name: Bundeling
+          command: |
+            shopt -s dotglob
+            sudo tar -cvzf ${CIRCLE_PROJECT_REPONAME}-${CIRCLE_SHA1}.tar.gz *
+            shopt -u dotglob
+      - run:
+          name: Moving file to s3
+          command: |
+            export AWS_ACCESS_KEY_ID=$BUILD_STORE_S3_ACCESS_KEY
+            export AWS_SECRET_ACCESS_KEY=$BUILD_STORE_S3_SECRET_KEY
+            aws s3 cp ${CIRCLE_PROJECT_REPONAME}-${CIRCLE_SHA1}.tar.gz s3://$BUILD_STORE_S3_BUCKET_NAME/shiny/test/${CIRCLE_PROJECT_REPONAME}/${CIRCLE_PROJECT_REPONAME}-${CIRCLE_SHA1}.tar.gz
+      - run:
+          name: Run polly CLI
+          command: |
+            echo "
+            {
+              \"image\": \"mithoopolly/build-pusher\",
+              \"tag\": \"v0.0.3\",
+              \"name\": \"shiny build push job for repo ${CIRCLE_PROJECT_REPONAME} and hash ${CIRCLE_SHA1}\",
+              \"cpu\": \"500m\",
+              \"memory\": \"500Mi\",
+              \"storage\": {
+                  \"type\": \"efs\",
+                  \"app\": \"shiny-build\",
+                  \"X-Polly-Auth\": \"f2e1667d4a52a\"
+              },
+              \"secret_env\": {
+                  \"AWS_ACCESS_KEY_ID\": \"${BUILD_STORE_S3_ACCESS_KEY}\",
+                  \"AWS_SECRET_ACCESS_KEY\": \"${BUILD_STORE_S3_SECRET_KEY}\"
+              },
+              \"env\": {
+                  \"S3_FILE_NAME\": \"${BUILD_STORE_S3_BUCKET_NAME}/shiny/test/${CIRCLE_PROJECT_REPONAME}/${CIRCLE_PROJECT_REPONAME}-${CIRCLE_SHA1}.tar.gz\",
+                  \"REPONAME\": \"${CIRCLE_PROJECT_REPONAME}\"
+              }
+            }
+            " > argojob.json
+            cat argojob.json
+            polly jobs submit --workspace-id 3130 --job-file $(pwd)/argojob.json > startme.txt
+            cat startme.txt
+            SUCCESS_ERROR_INSTART=$(cat startme.txt | grep "Success:")
+
+            if [ "$SUCCESS_ERROR_INSTART" == "" ]; then
+                echo "Error occured while starting the job"
+                exit 1
+            else
+                echo "JOB launched"
+            fi
+            
+            while [ true ]
+            do
+                STATUS=$(cat startme.txt | grep "status" | cut -d : -f 2)
+                $STATUS > status.txt
+                cat status.txt
+                POLLY_SUCC=$(cat status.txt | grep "SUCCESS" || true)
+                POLLY_ERR=$(cat status.txt | grep "ERROR" || true)
+                if [ "$POLLY_ERR" == "" ]; then
+                    echo "RUNNING"
+                else
+                    echo "Error occured while running the job"
+                    exit 1
+                fi
+
+                if [ "$POLLY_SUCC" == "" ]; then
+                    echo "RUNNING"
+                else
+                    echo "published"
+                    exit 0
+                fi
+                sleep 10
+            done
+
+  build_and_publish_development:
+    machine:
+      docker_layer_caching: true
+    steps:
+      - checkout
+      - run:
+          name: Install sshpass
+          command: |
+            sudo apt-get update; sudo apt-get install -y sshpass
+            export NVM_DIR="/opt/circleci/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+            nvm install v10.16.3 && nvm use v10.16.3 && nvm alias default v10.16.3
+            sudo apt-get install -y npm awscli
+            npm install -g npm@latest
+            npm install -g  @elucidatainc/pollycli
+            echo 'export PATH=/opt/circleci/.nvm/versions/node/v10.16.3/bin:$PATH' >> $BASH_ENV
+            echo '
+            {
+                "environment": "dev",
+                "baseApi": "https://api.devpolly.elucidata.io",
+                "baseV2Api": "https://v2.api.devpolly.elucidata.io",
+                "machines": {
+                    "gp": "4 vCPU, 16GB RAM",
+                    "ci2xlarge": "16 vCPU, 32GB RAM",
+                    "ci3xlarge": "36 vCPU, 72GB RAM",
+                    "mi2xlarge": "4 vCPU, 32GB RAM",
+                    "mi3xlarge": "8 vCPU, 64GB RAM"
+                }
+            }
+            ' > /opt/circleci/.nvm/versions/node/v10.16.3/lib/node_modules/@elucidatainc/pollycli/src/env.json
+            cat /opt/circleci/.nvm/versions/node/v10.16.3/lib/node_modules/@elucidatainc/pollycli/src/env.json
+      - run:
+          name: Login into polly cli
+          command: |
+            export AWS_ACCESS_KEY_ID=$BUILD_STORE_S3_ACCESS_KEY
+            export AWS_SECRET_ACCESS_KEY=$BUILD_STORE_S3_SECRET_KEY
+            mkdir -p $HOME/.config/pollycli/
+            aws s3 cp s3://$BUILD_STORE_S3_BUCKET_NAME/devcredentials.json $HOME/.config/pollycli/credentials.json
+            polly --version
+            polly whoami
+      - run:
+          name: Making a server detection file
+          command: touch ./.server
+      - run:
+          name: Pull the pollyHelperPackage
+          command: (git clone https://bitbucket.org/elucidatainc/pollyrhelper.git; cd pollyrhelper; git checkout development; mv pollyHelper.R cwfHelper.R ../; cd .. ; rm -rf pollyrhelper/)
+      - run:
+          name: Docker pull 
+          command: | 
+            RVERSION=$(grep -o  "RVersion.*" ./packrat/packrat.lock | cut -d : -f 2 | sed 's/ //g' | sed 's/\./-/g')
+            docker pull mithoopolly/shinyserver_min_r_${RVERSION}:${DOCKER_DEV_TAG}
+      - run:
+          name: Saving packrat for after cache use
+          command: cp packrat/init.R packraInit.R; cp packrat/packrat.lock packrat.lock; cp packrat/packrat.opts packrat.opts;
+      - restore_cache:
+          keys:
+            - deps-v2-{{ checksum "packrat.lock" }}
+            - deps-v2-
+      - run:
+          name: Restore packrat for after cache use
+          command: |
+            RVERSION_NEW=$(grep -o  "RVersion.*" ./packrat.lock | cut -d : -f 2 | sed 's/ //g' | sed 's/\./-/g')
+            RVERSION_CACED=$(grep -o  "RVersion.*" ./packrat/packrat.lock | cut -d : -f 2 | sed 's/ //g' | sed 's/\./-/g')
+            if [ "$RVERSION_NEW" == "$RVERSION_CACED" ]; then
+              echo "R version is consistant"
+            else
+              echo "R version is not consistant. Removing the contents inside the packrat folder"
+              rm -rf ./packrat/*
+              exit 1
+            fi
+            mv packraInit.R packrat/init.R; mv packrat.lock packrat/packrat.lock; mv packrat.opts packrat/packrat.opts;
+      - run:
+          name: Docker build
+          command: |
+            RVERSION=$(grep -o  "RVersion.*" ./packrat/packrat.lock | cut -d : -f 2 | sed 's/ //g' | sed 's/\./-/g')
+            docker run -v $(pwd):/srv/ -e EXEC_MODE=build -p 81:3838  mithoopolly/shinyserver_min_r_${RVERSION}:${DOCKER_DEV_TAG}
+      - save_cache:
+          key: deps-v2-{{ checksum "packrat/packrat.lock" }}
+          paths:
+            - "packrat"
+      - run:
+          name: Removing things that are not needed for bundling
+          command: |
+            sudo rm -rf packrat/src/
+            sudo rm -rf .git/
+      - run:
+          name: Bundeling
+          command: |
+            shopt -s dotglob
+            sudo tar -cvzf ${CIRCLE_PROJECT_REPONAME}-${CIRCLE_SHA1}.tar.gz *
+            shopt -u dotglob
+      - run:
+          name: Moving file to s3
+          command: |
+            export AWS_ACCESS_KEY_ID=$BUILD_STORE_S3_ACCESS_KEY
+            export AWS_SECRET_ACCESS_KEY=$BUILD_STORE_S3_SECRET_KEY
+            aws s3 cp ${CIRCLE_PROJECT_REPONAME}-${CIRCLE_SHA1}.tar.gz s3://$BUILD_STORE_S3_BUCKET_NAME/shiny/test/${CIRCLE_PROJECT_REPONAME}/${CIRCLE_PROJECT_REPONAME}-${CIRCLE_SHA1}.tar.gz
+      - run:
+          name: Run polly CLI
+          command: |
+            echo "
+            {
+              \"image\": \"mithoopolly/build-pusher\",
+              \"tag\": \"v0.0.3\",
+              \"name\": \"shiny build push job for repo ${CIRCLE_PROJECT_REPONAME} and hash ${CIRCLE_SHA1}\",
+              \"cpu\": \"500m\",
+              \"memory\": \"500Mi\",
+              \"storage\": {
+                  \"type\": \"efs\",
+                  \"app\": \"shiny-build\",
+                  \"X-Polly-Auth\": \"f2e1667d4a52a\"
+              },
+              \"secret_env\": {
+                  \"AWS_ACCESS_KEY_ID\": \"${BUILD_STORE_S3_ACCESS_KEY}\",
+                  \"AWS_SECRET_ACCESS_KEY\": \"${BUILD_STORE_S3_SECRET_KEY}\"
+              },
+              \"env\": {
+                  \"S3_FILE_NAME\": \"${BUILD_STORE_S3_BUCKET_NAME}/shiny/dev/${CIRCLE_PROJECT_REPONAME}/${CIRCLE_PROJECT_REPONAME}-${CIRCLE_SHA1}.tar.gz\",
+                  \"REPONAME\": \"${CIRCLE_PROJECT_REPONAME}\"
+              }
+            }
+            " > argojob.json
+            cat argojob.json
+            polly jobs submit --workspace-id 2812 --job-file $(pwd)/argojob.json > startme.txt
+            cat startme.txt
+            SUCCESS_ERROR_INSTART=$(cat startme.txt | grep "Success:")
+
+            if [ "$SUCCESS_ERROR_INSTART" == "" ]; then
+                echo "Error occured while starting the job"
+                exit 1
+            else
+                echo "JOB launched"
+            fi
+            
+            while [ true ]
+            do
+                STATUS=$(cat startme.txt | grep "status" | cut -d : -f 2)
+                $STATUS > status.txt
+                cat status.txt
+                POLLY_SUCC=$(cat status.txt | grep "SUCCESS" || true)
+                POLLY_ERR=$(cat status.txt | grep "ERROR" || true)
+                if [ "$POLLY_ERR" == "" ]; then
+                    echo "RUNNING"
+                else
+                    echo "Error occured while running the job"
+                    exit 1
+                fi
+
+                if [ "$POLLY_SUCC" == "" ]; then
+                    echo "RUNNING"
+                else
+                    echo "published"
+                    exit 0
+                fi
+                sleep 10
+            done
+
+  build_and_publish_master:
+    machine:
+      docker_layer_caching: true
+    steps:
+      - checkout
+      - run:
+          name: Install sshpass
+          command: |
+            sudo apt-get update; sudo apt-get install -y sshpass
+            export NVM_DIR="/opt/circleci/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+            nvm install v10.16.3 && nvm use v10.16.3 && nvm alias default v10.16.3
+            sudo apt-get install -y npm awscli
+            npm install -g npm@latest
+            npm install -g  @elucidatainc/pollycli
+            echo 'export PATH=/opt/circleci/.nvm/versions/node/v10.16.3/bin:$PATH' >> $BASH_ENV
+            echo '
+            {
+                "environment": "prod",
+                "baseApi": "https://api.polly.elucidata.io",
+                "baseV2Api": "https://v2.api.polly.elucidata.io",
+                "machines": {
+                    "gp": "4 vCPU, 16GB RAM",
+                    "ci2xlarge": "16 vCPU, 32GB RAM",
+                    "ci3xlarge": "36 vCPU, 72GB RAM",
+                    "mi2xlarge": "4 vCPU, 32GB RAM",
+                    "mi3xlarge": "8 vCPU, 64GB RAM"
+                }
+            }
+            ' > /opt/circleci/.nvm/versions/node/v10.16.3/lib/node_modules/@elucidatainc/pollycli/src/env.json
+            cat /opt/circleci/.nvm/versions/node/v10.16.3/lib/node_modules/@elucidatainc/pollycli/src/env.json
+      - run:
+          name: Login into polly cli
+          command: |
+            export AWS_ACCESS_KEY_ID=$BUILD_STORE_S3_ACCESS_KEY
+            export AWS_SECRET_ACCESS_KEY=$BUILD_STORE_S3_SECRET_KEY
+            mkdir -p $HOME/.config/pollycli/
+            aws s3 cp s3://$BUILD_STORE_S3_BUCKET_NAME/prodcredentials.json $HOME/.config/pollycli/credentials.json
+            polly --version
+            polly whoami
+      - run:
+          name: Making a server detection file
+          command: touch ./.server
+      - run:
+          name: Pull the pollyHelperPackage
+          command: (git clone https://bitbucket.org/elucidatainc/pollyrhelper.git; cd pollyrhelper; git checkout production; mv pollyHelper.R cwfHelper.R ../; cd .. ; rm -rf pollyrhelper/)
+      - run:
+          name: Docker pull 
+          command: | 
+            RVERSION=$(grep -o  "RVersion.*" ./packrat/packrat.lock | cut -d : -f 2 | sed 's/ //g' | sed 's/\./-/g')
+            docker pull mithoopolly/shinyserver_min_r_${RVERSION}:${DOCKER_PROD_TAG}
+      - run:
+          name: Saving packrat for after cache use
+          command: cp packrat/init.R packraInit.R; cp packrat/packrat.lock packrat.lock; cp packrat/packrat.opts packrat.opts;
+      - restore_cache:
+          keys:
+            - deps-v2-{{ checksum "packrat.lock" }}
+            - deps-v2-
+      - run:
+          name: Restore packrat for after cache use
+          command: |
+            RVERSION_NEW=$(grep -o  "RVersion.*" ./packrat.lock | cut -d : -f 2 | sed 's/ //g' | sed 's/\./-/g')
+            RVERSION_CACED=$(grep -o  "RVersion.*" ./packrat/packrat.lock | cut -d : -f 2 | sed 's/ //g' | sed 's/\./-/g')
+            if [ "$RVERSION_NEW" == "$RVERSION_CACED" ]; then
+              echo "R version is consistant"
+            else
+              echo "R version is not consistant. Removing the contents inside the packrat folder"
+              rm -rf ./packrat/*
+              exit 1
+            fi
+            mv packraInit.R packrat/init.R; mv packrat.lock packrat/packrat.lock; mv packrat.opts packrat/packrat.opts;
+      - run:
+          name: Docker build
+          command: |
+            RVERSION=$(grep -o  "RVersion.*" ./packrat/packrat.lock | cut -d : -f 2 | sed 's/ //g' | sed 's/\./-/g')
+            docker run -v $(pwd):/srv/ -e EXEC_MODE=build -p 81:3838  mithoopolly/shinyserver_min_r_${RVERSION}:${DOCKER_PROD_TAG}
+      - save_cache:
+          key: deps-v2-{{ checksum "packrat/packrat.lock" }}
+          paths:
+            - "packrat"
+      - run:
+          name: Removing things that are not needed for bundling
+          command: |
+            sudo rm -rf packrat/src/
+            sudo rm -rf .git/
+      - run:
+          name: Bundeling
+          command: |
+            shopt -s dotglob
+            sudo tar -cvzf ${CIRCLE_PROJECT_REPONAME}-${CIRCLE_SHA1}.tar.gz *
+            shopt -u dotglob
+      - run:
+          name: Moving file to s3
+          command: |
+            export AWS_ACCESS_KEY_ID=$BUILD_STORE_S3_ACCESS_KEY
+            export AWS_SECRET_ACCESS_KEY=$BUILD_STORE_S3_SECRET_KEY
+            aws s3 cp ${CIRCLE_PROJECT_REPONAME}-${CIRCLE_SHA1}.tar.gz s3://$BUILD_STORE_S3_BUCKET_NAME/shiny/prod/${CIRCLE_PROJECT_REPONAME}/${CIRCLE_PROJECT_REPONAME}-${CIRCLE_SHA1}.tar.gz
+      - run:
+          name: Run polly CLI
+          command: |
+            echo "
+            {
+              \"image\": \"mithoopolly/build-pusher\",
+              \"tag\": \"v0.0.3\",
+              \"name\": \"shiny build push job for repo ${CIRCLE_PROJECT_REPONAME} and hash ${CIRCLE_SHA1}\",
+              \"cpu\": \"500m\",
+              \"memory\": \"500Mi\",
+              \"storage\": {
+                  \"type\": \"fileshare\",
+                  \"app\": \"shiny-build\",
+                  \"X-Polly-Auth\": \"f2e1667d4a52a\"
+              },
+              \"secret_env\": {
+                  \"AWS_ACCESS_KEY_ID\": \"${BUILD_STORE_S3_ACCESS_KEY}\",
+                  \"AWS_SECRET_ACCESS_KEY\": \"${BUILD_STORE_S3_SECRET_KEY}\"
+              },
+              \"env\": {
+                  \"S3_FILE_NAME\": \"${BUILD_STORE_S3_BUCKET_NAME}/shiny/prod/${CIRCLE_PROJECT_REPONAME}/${CIRCLE_PROJECT_REPONAME}-${CIRCLE_SHA1}.tar.gz\",
+                  \"REPONAME\": \"${CIRCLE_PROJECT_REPONAME}\"
+              }
+            }
+            " > argojob.json
+            cat argojob.json
+            polly jobs submit --workspace-id 4739 --job-file $(pwd)/argojob.json > startme.txt
+            cat startme.txt
+            SUCCESS_ERROR_INSTART=$(cat startme.txt | grep "Success:")
+
+            if [ "$SUCCESS_ERROR_INSTART" == "" ]; then
+                echo "Error occured while starting the job"
+                exit 1
+            else
+                echo "JOB launched"
+            fi
+            
+            while [ true ]
+            do
+                STATUS=$(cat startme.txt | grep "status" | cut -d : -f 2)
+                $STATUS > status.txt
+                cat status.txt
+                POLLY_SUCC=$(cat status.txt | grep "SUCCESS" || true)
+                POLLY_ERR=$(cat status.txt | grep "ERROR" || true)
+                if [ "$POLLY_ERR" == "" ]; then
+                    echo "RUNNING"
+                else
+                    echo "Error occured while running the job"
+                    exit 1
+                fi
+
+                if [ "$POLLY_SUCC" == "" ]; then
+                    echo "RUNNING"
+                else
+                    echo "published"
+                    exit 0
+                fi
+                sleep 10
+            done
+
+workflows:
+  version: 2
+  build-master:
+    jobs:
+      - build_and_publish_testing:
+          context: compute
+          filters:
+            branches:
+              only: develop
+      - build_and_publish_development:
+          context: compute
+          filters:
+            branches:
+              only: /.*_dev/
+      - hold:
+          type: approval
+          filters:
+            branches:
+              only: master
+      - build_and_publish_master:
+          context: compute
+          filters:
+            branches:
+              only: master
+          requires:
+            - hold
