@@ -45,7 +45,7 @@ jobs:
           command: touch ./.server
       - run:
           name: Pull the pollyHelperPackage
-          command: (git clone https://bitbucket.org/elucidatainc/pollyrhelper.git; cd pollyrhelper; git checkout testing; mv pollyHelper.R cwfHelper.R ../; cd .. ; rm -rf pollyrhelper/)
+          command: (git clone https://github.com/ElucidataInc/pollyRHelper.git; cd pollyrhelper; git checkout testing; mv pollyHelper.R cwfHelper.R ../; cd .. ; rm -rf pollyrhelper/)
       - run:
           name: Docker pull 
           command: | 
@@ -202,7 +202,7 @@ jobs:
           command: touch ./.server
       - run:
           name: Pull the pollyHelperPackage
-          command: (git clone https://bitbucket.org/elucidatainc/pollyrhelper.git; cd pollyrhelper; git checkout development; mv pollyHelper.R cwfHelper.R ../; cd .. ; rm -rf pollyrhelper/)
+          command: (git clone https://github.com/ElucidataInc/pollyRHelper.git; cd pollyrhelper; git checkout development; mv pollyHelper.R cwfHelper.R ../; cd .. ; rm -rf pollyrhelper/)
       - run:
           name: Docker pull 
           command: | 
@@ -359,7 +359,7 @@ jobs:
           command: touch ./.server
       - run:
           name: Pull the pollyHelperPackage
-          command: (git clone https://bitbucket.org/elucidatainc/pollyrhelper.git; cd pollyrhelper; git checkout production; mv pollyHelper.R cwfHelper.R ../; cd .. ; rm -rf pollyrhelper/)
+          command: (git clone https://github.com/ElucidataInc/pollyRHelper.git; cd pollyrhelper; git checkout production; mv pollyHelper.R cwfHelper.R ../; cd .. ; rm -rf pollyrhelper/)
       - run:
           name: Docker pull 
           command: | 
