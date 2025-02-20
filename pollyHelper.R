@@ -491,18 +491,32 @@ pollyEventInit <- function(session, input, output, variableList, reactivedata,
       runningEnv <<- parseQueryString(session$clientData$url_search)$env
       if (IS_SERVER) {
         if (identical(runningEnv, 'prod')) {
-          apiUrl <- 'https://api.polly.elucidata.io'
+          apiUrl <- 'https://apis.polly.elucidata.io/auth'
         } else if (runningEnv == 'test') {
-          apiUrl <- 'https://api.testpolly.elucidata.io'
+          apiUrl <- 'https://apis.testpolly.elucidata.io/auth'
         } else if (runningEnv == 'eupolly') {
-          apiUrl <- 'https://api.eu-polly.elucidata.io'
+          apiUrl <- 'https://apis.eu-polly.elucidata.io/auth'
         } else {
-          apiUrl <- 'https://api.devpolly.elucidata.io'
+          apiUrl <- 'https://apis.devpolly.elucidata.io/auth'
         }
-        requestUrl <- paste0(apiUrl, OS_SEP, 'me')
-        getRes <- fromJSON(httr::content(httr::GET( requestUrl, httr::set_cookies(unlist(fromJSON(input$pollyCookies)))), "text"))
+
+        apiKey <- Sys.getenv("POLLY_API_KEY")  # Get API key from environment variable
+
+        requestUrl <- paste0(apiUrl, '/me')
+        getRes <- fromJSON(content(GET(requestUrl, add_headers(`X-API-Key` = apiKey)), "text"))
+
         trialEnabled <- getRes$organization_details$licenses[[1]]$is_trial
         trialDataSet <- NULL
+
+        # if (identical(trialEnabled, TRUE)) {
+        #   pollyRunId <- parseQueryString(session$clientData$url_search)$run_id
+        #   requestUrl <- paste0(apiUrl, OS_SEP, 'run?id=', pollyRunId, '&state=detail')
+        #   getRes <- fromJSON(content(GET(requestUrl, add_headers(`X-API-Key` = apiKey)), "text"))
+          
+        #   if (identical(grepl('demo#', getRes$run_type), TRUE)) {
+        #     trialDataSet <- strsplit(getRes$run_type, "demo#")[[1]][[2]]
+        #   }
+        # }
         if (identical(trialEnabled, TRUE)) {
           pollyRunId <- parseQueryString(session$clientData$url_search)$run_id
           requestUrl <- paste0(apiUrl, OS_SEP, 'run?id=', pollyRunId, '&state=detail')
@@ -1084,23 +1098,54 @@ storeVersionInPolly <- function(polly_run_id, pollyCookies, parent_state_id, onB
     apiUrl <- NULL
     if ( !length(polly_run_id) == 0 && !length(pollyCookies) == 0 &&  !length(parent_state_id) == 0) {
       if (enviro == 'prod') {
-        apiUrl <- 'https://api.polly.elucidata.io'
+        apiUrl <- 'https://apis.polly.elucidata.io/mithoo-api'
       } else if (enviro == 'test') {
-        apiUrl <- 'https://api.testpolly.elucidata.io'
+        apiUrl <- 'https://apis.testpolly.elucidata.io/mithoo-api'
       } else if (enviro == 'eupolly') {
-        apiUrl <- 'https://api.eu-polly.elucidata.io'
+        apiUrl <- 'https://apis.eu-polly.elucidata.io/mithoo-api'
       } else {
-        apiUrl <- 'https://api.devpolly.elucidata.io'
+        apiUrl <- 'https://apis.devpolly.elucidata.io/mithoo-api'
       }
 
       options( scipen = 999 )
 
       postUrl <- paste0(apiUrl, '/uistores')
-      postBody = list(runid = unbox(polly_run_id), version_name = unbox(verionName), parent_version = unbox(paste0(polly_run_id, '-', parent_state_id)))
-      postRes <- httr::content(httr::POST( postUrl, body = toJSON(list(payload = unbox(toString(toJSON(postBody))))), httr::set_cookies(unlist(fromJSON(pollyCookies)))))
-      patchReqBody <- list(storageId = unbox(strsplit(onBookmarkedState, "_state_id_=")[[1]][2]), storageMedium = unbox('shiny'), storageData = bookmarkedValues)
-      patchUrl <- paste0(apiUrl, '/uistores/app-state/', postRes$data$version)
-      patchRes <- httr::PATCH(patchUrl, body = toJSON(list(payload = unbox(toString(toJSON(patchReqBody))))), httr::set_cookies(unlist(fromJSON(pollyCookies))))
+        postBody <- list(
+            data = list(
+                id = unbox("uistore"),
+                type = unbox("uistore"),
+                attributes = list(
+                    runid = unbox(polly_run_id),
+                    version_name = unbox(verionName),
+                    parent_version = unbox(paste0(polly_run_id, '-', parent_state_id))
+                )
+            )
+        )
+      
+      postRes <- httr::content(httr::POST(
+          postUrl, 
+          body = toJSON(postBody, auto_unbox = TRUE), 
+          encode = "json",
+          httr::set_cookies(unlist(fromJSON(pollyCookies)))
+      ))
+      
+      new_version_id <- postRes$data$id  # New response format
+
+      # Construct PATCH request body
+      patchReqBody <- list(
+          storageId = unbox(strsplit(onBookmarkedState, "_state_id_=")[[1]][2]),
+          storageMedium = unbox('shiny'),
+          storageData = bookmarkedValues
+      )
+
+      patchUrl <- paste0(apiUrl, '/uistores/app-state/', new_version_id)
+      patchRes <- httr::PATCH(
+          patchUrl, 
+          body = toJSON(list(payload = unbox(toString(toJSON(patchReqBody))))), 
+          encode = "json",
+          httr::set_cookies(unlist(fromJSON(pollyCookies)))
+      )
+
       if (length(httr::content(patchRes)$version_id) != 0) {
         tmp <- getOption("parentStateId")
         tmp[[polly_run_id]] <- strsplit(httr::content(patchRes)$version_id, '-')[[1]][2]
