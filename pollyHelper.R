@@ -491,18 +491,32 @@ pollyEventInit <- function(session, input, output, variableList, reactivedata,
       runningEnv <<- parseQueryString(session$clientData$url_search)$env
       if (IS_SERVER) {
         if (identical(runningEnv, 'prod')) {
-          apiUrl <- 'https://api.polly.elucidata.io'
+          apiUrl <- 'https://apis.polly.elucidata.io/auth'
         } else if (runningEnv == 'test') {
-          apiUrl <- 'https://api.testpolly.elucidata.io'
+          apiUrl <- 'https://apis.testpolly.elucidata.io/auth'
         } else if (runningEnv == 'eupolly') {
-          apiUrl <- 'https://api.eu-polly.elucidata.io'
+          apiUrl <- 'https://apis.eu-polly.elucidata.io/auth'
         } else {
-          apiUrl <- 'https://api.devpolly.elucidata.io'
+          apiUrl <- 'https://apis.devpolly.elucidata.io/auth'
         }
-        requestUrl <- paste0(apiUrl, OS_SEP, 'me')
-        getRes <- fromJSON(httr::content(httr::GET( requestUrl, httr::set_cookies(unlist(fromJSON(input$pollyCookies)))), "text"))
+
+        apiKey <- Sys.getenv("POLLY_API_KEY")  # Get API key from environment variable
+
+        requestUrl <- paste0(apiUrl, '/me')
+        getRes <- fromJSON(content(GET(requestUrl, add_headers(`X-API-Key` = apiKey)), "text"))
+
         trialEnabled <- getRes$organization_details$licenses[[1]]$is_trial
         trialDataSet <- NULL
+
+        # if (identical(trialEnabled, TRUE)) {
+        #   pollyRunId <- parseQueryString(session$clientData$url_search)$run_id
+        #   requestUrl <- paste0(apiUrl, OS_SEP, 'run?id=', pollyRunId, '&state=detail')
+        #   getRes <- fromJSON(content(GET(requestUrl, add_headers(`X-API-Key` = apiKey)), "text"))
+          
+        #   if (identical(grepl('demo#', getRes$run_type), TRUE)) {
+        #     trialDataSet <- strsplit(getRes$run_type, "demo#")[[1]][[2]]
+        #   }
+        # }
         if (identical(trialEnabled, TRUE)) {
           pollyRunId <- parseQueryString(session$clientData$url_search)$run_id
           requestUrl <- paste0(apiUrl, OS_SEP, 'run?id=', pollyRunId, '&state=detail')
