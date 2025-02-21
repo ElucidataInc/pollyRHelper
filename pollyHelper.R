@@ -1131,7 +1131,7 @@ storeVersionInPolly <- function(polly_run_id, pollyCookies, parent_state_id, onB
           postUrl, 
           body = toJSON(postBody, auto_unbox = TRUE), 
           encode = "json",
-          add_headers(`X-API-Key` = apiKey)
+          httr::add_headers(`X-API-Key` = apiKey, `Content-Type` = "application/vnd.api+json")
       ))
       
       new_version_id <- postRes$data$id  # New response format
@@ -1148,7 +1148,7 @@ storeVersionInPolly <- function(polly_run_id, pollyCookies, parent_state_id, onB
           patchUrl, 
           body = toJSON(list(payload = unbox(toString(toJSON(patchReqBody))))), 
           encode = "json",
-          add_headers(`X-API-Key` = apiKey)
+          httr::add_headers(`X-API-Key` = apiKey, `Content-Type` = "application/vnd.api+json")
       )
 
       if (length(httr::content(patchRes)$version_id) != 0) {
