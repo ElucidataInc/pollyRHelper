@@ -1121,12 +1121,17 @@ storeVersionInPolly <- function(polly_run_id, pollyCookies, parent_state_id, onB
                 )
             )
         )
+
+      apiKey <- Sys.getenv("POLLY_API_KEY")  # Get API key from environment variable
+
+      # requestUrl <- paste0(apiUrl, '/me')
+      # getRes <- fromJSON(content(GET(requestUrl, add_headers(`X-API-Key` = apiKey)), "text"))
       
       postRes <- httr::content(httr::POST(
           postUrl, 
           body = toJSON(postBody, auto_unbox = TRUE), 
           encode = "json",
-          httr::set_cookies(unlist(fromJSON(pollyCookies)))
+          add_headers(`X-API-Key` = apiKey)
       ))
       
       new_version_id <- postRes$data$id  # New response format
@@ -1143,7 +1148,7 @@ storeVersionInPolly <- function(polly_run_id, pollyCookies, parent_state_id, onB
           patchUrl, 
           body = toJSON(list(payload = unbox(toString(toJSON(patchReqBody))))), 
           encode = "json",
-          httr::set_cookies(unlist(fromJSON(pollyCookies)))
+          add_headers(`X-API-Key` = apiKey)
       )
 
       if (length(httr::content(patchRes)$version_id) != 0) {
