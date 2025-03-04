@@ -349,13 +349,13 @@ getAllProjectFiles <- function(upload_env1, upload_run_id1, pollyCookies) {
 
 getAllProjectFilesAndFolders <- function(upload_env1, upload_workspace_id1, pollyCookies, sub_path = "/") {
   if (upload_env1 == 'prod') {
-    apiUrl <- 'https://apis.polly.elucidata.io'
+    apiUrl <- 'https://apis.polly.elucidata.io/mithoo'
   } else if (upload_env1 == 'test') {
-    apiUrl <- 'https://apis.testpolly.elucidata.io'
+    apiUrl <- 'https://apis.testpolly.elucidata.io/mithoo'
   } else if (upload_env1 == 'eupolly') {
     apiUrl <- 'https://apis.eu-polly.elucidata.io'
   } else {
-    apiUrl <- 'https://apis.devpolly.elucidata.io'
+    apiUrl <- 'https://apis.devpolly.elucidata.io/mithoo'
   }
 
   apiKey <- Sys.getenv("POLLY_API_KEY")  # Get API key from environment variable
