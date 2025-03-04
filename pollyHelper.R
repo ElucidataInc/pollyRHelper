@@ -361,7 +361,7 @@ getAllProjectFilesAndFolders <- function(upload_env1, upload_workspace_id1, poll
   apiKey <- Sys.getenv("POLLY_API_KEY")  # Get API key from environment variable
 
   requestUrl <- paste0(apiUrl, OS_SEP, 'projects', OS_SEP, upload_workspace_id1, OS_SEP, 'files', URLencode(sub_path))
-  getRes <- fromJSON(httr::content(httr::GET( requestUrl, httr::add_headers(`X-API-Key` = apiKey, `Content-Type` = "application/vnd.api+json"))))
+  getRes <- fromJSON(httr::content(httr::GET( requestUrl, httr::add_headers(`X-API-Key` = apiKey, `Content-Type` = "application/vnd.api+json")), "text"))
   
   if (identical(nrow(getRes$data), NULL) || nrow(getRes$data) == 0) {
     return (
