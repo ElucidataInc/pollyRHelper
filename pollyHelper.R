@@ -349,17 +349,19 @@ getAllProjectFiles <- function(upload_env1, upload_run_id1, pollyCookies) {
 
 getAllProjectFilesAndFolders <- function(upload_env1, upload_workspace_id1, pollyCookies, sub_path = "/") {
   if (upload_env1 == 'prod') {
-    apiUrl <- 'https://v2.api.polly.elucidata.io'
+    apiUrl <- 'https://apis.polly.elucidata.io'
   } else if (upload_env1 == 'test') {
-    apiUrl <- 'https://v2.api.testpolly.elucidata.io'
+    apiUrl <- 'https://apis.testpolly.elucidata.io'
   } else if (upload_env1 == 'eupolly') {
-    apiUrl <- 'https://v2.api.eu-polly.elucidata.io'
+    apiUrl <- 'https://apis.eu-polly.elucidata.io'
   } else {
-    apiUrl <- 'https://v2.api.devpolly.elucidata.io'
+    apiUrl <- 'https://apis.devpolly.elucidata.io'
   }
 
+  apiKey <- Sys.getenv("POLLY_API_KEY")  # Get API key from environment variable
+
   requestUrl <- paste0(apiUrl, OS_SEP, 'projects', OS_SEP, upload_workspace_id1, OS_SEP, 'files', URLencode(sub_path))
-  getRes <- fromJSON(httr::content(httr::GET( requestUrl, httr::add_headers('Content-Type' = 'application/vnd.api+json'), httr::set_cookies(unlist(fromJSON(pollyCookies)))), "text"))  
+  getRes <- fromJSON(httr::content(httr::GET( requestUrl, httr::add_headers(`X-API-Key` = apiKey, `Content-Type` = "application/vnd.api+json"))))
   
   if (identical(nrow(getRes$data), NULL) || nrow(getRes$data) == 0) {
     return (
@@ -503,7 +505,7 @@ pollyEventInit <- function(session, input, output, variableList, reactivedata,
         apiKey <- Sys.getenv("POLLY_API_KEY")  # Get API key from environment variable
 
         requestUrl <- paste0(apiUrl, '/me')
-        getRes <- fromJSON(content(GET(requestUrl, add_headers(`X-API-Key` = apiKey)), "text"))
+        getRes <- fromJSON(httr::content(httr::GET(requestUrl, httr::add_headers(`X-API-Key` = apiKey, `Content-Type` = "application/vnd.api+json"))))
 
         trialEnabled <- getRes$organization_details$licenses[[1]]$is_trial
         trialDataSet <- NULL
