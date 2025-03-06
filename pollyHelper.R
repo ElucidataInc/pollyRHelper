@@ -580,7 +580,7 @@ pollyEventInit <- function(session, input, output, variableList, reactivedata,
         apiKey <- Sys.getenv("POLLY_API_KEY")  # Get API key from environment variable
 
         requestUrl <- paste0(apiUrl, '/me')
-        getRes <- fromJSON(httr::content(httr::GET(requestUrl, httr::add_headers(`X-API-Key` = apiKey, `Content-Type` = "application/vnd.api+json"))))
+        getRes <- fromJSON(httr::content(httr::GET(requestUrl, httr::add_headers(`X-API-Key` = apiKey, `Content-Type` = "application/vnd.api+json")), "text"))
 
         trialEnabled <- getRes$organization_details$licenses[[1]]$is_trial
         trialDataSet <- NULL
