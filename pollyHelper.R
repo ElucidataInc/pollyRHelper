@@ -407,7 +407,7 @@ getAllProjectFilesAndFolders <- function(upload_env1, upload_workspace_id1, poll
 
 
   getRes <- httr::content(httr::POST(
-          url, 
+          requestUrl, 
           body = toJSON(payload, auto_unbox = TRUE), 
           encode = "json",
           httr::add_headers(`X-API-Key` = apiKey, `Content-Type` = "application/vnd.api+json")
