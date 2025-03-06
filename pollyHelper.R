@@ -360,36 +360,111 @@ getAllProjectFilesAndFolders <- function(upload_env1, upload_workspace_id1, poll
 
   apiKey <- Sys.getenv("POLLY_API_KEY")  # Get API key from environment variable
 
-  requestUrl <- paste0(apiUrl, OS_SEP, 'projects', OS_SEP, upload_workspace_id1, OS_SEP, 'files', URLencode(sub_path))
-  getRes <- fromJSON(httr::content(httr::GET( requestUrl, httr::add_headers(`X-API-Key` = apiKey, `Content-Type` = "application/vnd.api+json")), "text"))
-  
-  if (identical(nrow(getRes$data), NULL) || nrow(getRes$data) == 0) {
-    return (
-      data.frame(file_name = character(),
-      last_modified = character(),
-      size = character(),
-      file_type = character(),
-      base_path = character(),
-      stringsAsFactors=FALSE)
+  requestUrl <- paste0(apiUrl, OS_SEP, 'mithoo/workspaces', OS_SEP, upload_workspace_id1, OS_SEP, '_search')
+
+  payload <- list(
+    from = 0,
+    size = 20,
+    sort = list(
+      list("entity_name.keyword" = list(order = "asc"))
+    ),
+    query = list(
+      bool = list(
+        should = list(
+          list(
+            bool = list(
+              must = list(
+                list(term = list(`_index` = list(value = "{document_index}"))),
+                list(term = list(workspace_id = list(value = upload_workspace_id1))),
+                list(term = list(parent_folder_name = list(value = paste0(upload_workspace_id1, OS_SEP, URLencode(sub_path), OS_SEP)))),
+                list(bool = list(
+                  should = list(
+                    list(terms = list(entity_type = c("analysis", "notebook", "file", "folder")))
+                  )
+                ))
+              )
+            )
+          ),
+          list(
+            bool = list(
+              must = list(
+                list(term = list(`_index` = list(value = "{workspace_index}"))),
+                list(nested = list(
+                  path = "permissions",
+                  query = list(
+                    match = list(`permissions.user_id` = "{user_id}")
+                  )
+                ))
+              )
+            )
+          )
+        )
+      )
     )
-  }
-  final_func <- by(getRes$data, 1:nrow(getRes$data), function(row) {
-    file_type_name <- as.character(paste0(icon("file", lib = "glyphicon", class="project-files-size"), " ", row$attributes$file_name))
-    if (identical(row$type, "folder")) {
-      file_type_name <- as.character(paste0(icon("folder-close", lib = "glyphicon", class="project-files-size"), " ",row$attributes$file_name))
+  )
+
+
+  getRes <- httr::content(httr::POST(
+          url, 
+          body = toJSON(payload, auto_unbox = TRUE), 
+          encode = "json",
+          httr::add_headers(`X-API-Key` = apiKey, `Content-Type` = "application/vnd.api+json")
+      ))
+
+  formatted_data <- list(
+    data = lapply(getRes$hits$hits, function(item) {
+      src <- item$`_source`
+      list(
+        type = src$entity_type,
+        id = src$s3_key,
+        attributes = list(
+          s3_key = src$s3_key,
+          last_modified = as.character(as.POSIXct(src$modified_date, origin = "1970-01-01", tz = "UTC")),
+          size = ifelse(!is.null(src$size), paste0(round(src$size / 1024, 2), " KB"), "-"),
+          file_name = src$entity_name
+        ),
+        links = src$links
+      )
+    })
+  ) 
+
+  if (!is.list(formatted_data$data)) {
+        return (
+        data.frame(file_name = character(),
+        last_modified = character(),
+        size = character(),
+        file_type = character(),
+        base_path = character(),
+        stringsAsFactors=FALSE)
+        )
     }
-    de <- data.frame(
-      file_name = file_type_name,
-      last_modified = row$attributes$last_modified, 
-      size = row$attributes$size,
-      file_name_correct = row$attributes$file_name, 
-      file_type = row$type, 
-      base_path = sub_path, stringsAsFactors=FALSE
+
+    # Convert JSON data into a structured data frame
+    df <- do.call(rbind, lapply(formatted_data$data, function(row) {
+    if (!is.list(row$attributes)) {
+        return(NULL)  # Skip invalid entries
+    }
+    
+    # Handle missing values properly
+    file_type_name <- as.character(paste0(" ", row$attributes$file_name))
+    if (identical(row$type, "folder")) {
+      file_type_name <- as.character(paste0(" ",row$attributes$file_name))
+    }
+    list(
+        file_name = file_type_name,
+        last_modified = ifelse(is.null(row$attributes$last_modified) || length(row$attributes$last_modified) == 0, NA, row$attributes$last_modified),
+        size = ifelse(is.null(row$attributes$size), NA, row$attributes$size),
+        file_type = ifelse(is.null(row$type), NA, row$type),
+        file_name_correct = ifelse(is.null(row$attributes$file_name), NA, row$attributes$file_name), 
+        base_path = sub_path, stringsAsFactors=FALSE
     )
-    de
-  })
-  final_df <- do.call(rbind, final_func)
-  return (final_df)
+    }))
+
+    # Convert to data frame
+    df <- as.data.frame(df, stringsAsFactors = FALSE)
+
+    # Print the result
+    return(df)
 }
 
 prepareProjectData <- function(project_data_df, fileFormats) {
