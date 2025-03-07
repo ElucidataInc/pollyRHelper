@@ -406,67 +406,42 @@ getAllProjectFilesAndFolders <- function(upload_env1, upload_workspace_id1, poll
   )
 
 
-  getRes <- httr::content(httr::POST(
+  getRes <- fromJSON(httr::content(httr::POST(
           requestUrl, 
           body = toJSON(payload, auto_unbox = TRUE), 
           encode = "json",
-          httr::add_headers(`X-API-Key` = apiKey, `Content-Type` = "application/vnd.api+json")
-      ))
+          httr::add_headers(`X-API-Key` = pollyCookies, `Content-Type` = "application/vnd.api+json")
+      ), "text"))
 
-  formatted_data <- list(
-    data = lapply(getRes$hits$hits, function(item) {
-      src <- item$`_source`
-      list(
-        type = src$entity_type,
-        id = src$s3_key,
-        attributes = list(
-          s3_key = src$s3_key,
-          last_modified = as.character(as.POSIXct(src$modified_date, origin = "1970-01-01", tz = "UTC")),
-          size = ifelse(!is.null(src$size), paste0(round(src$size / 1024, 2), " KB"), "-"),
-          file_name = src$entity_name
-        ),
-        links = src$links
-      )
-    })
-  ) 
-
-  if (!is.list(formatted_data$data)) {
-        return (
-        data.frame(file_name = character(),
-        last_modified = character(),
-        size = character(),
-        file_type = character(),
-        base_path = character(),
-        stringsAsFactors=FALSE)
-        )
-    }
-
-    # Convert JSON data into a structured data frame
-    df <- do.call(rbind, lapply(formatted_data$data, function(row) {
-    if (!is.list(row$attributes)) {
-        return(NULL)  # Skip invalid entries
-    }
-    
-    # Handle missing values properly
-    file_type_name <- as.character(paste0(icon("file", lib = "glyphicon", class="project-files-size"), " ", row$attributes$file_name))
-    if (identical(row$type, "folder")) {
-      file_type_name <- as.character(paste0(icon("folder-close", lib = "glyphicon", class="project-files-size"), " ",row$attributes$file_name))
-    }
-    list(
-        file_name = file_type_name,
-        last_modified = ifelse(is.null(row$attributes$last_modified) || length(row$attributes$last_modified) == 0, "-", row$attributes$last_modified),
-        size = ifelse(is.null(row$attributes$size), "-", row$attributes$size),
-        file_type = ifelse(identical(row$type, "folder"), "folder", "file"),
-        file_name_correct = ifelse(is.null(row$attributes$file_name), "-", row$attributes$file_name),
-        base_path = sub_path
+      if (identical(nrow(getRes$hits$hits), NULL) || nrow(getRes$hits$hits) == 0) {
+    return (
+      data.frame(file_name = character(),
+      last_modified = character(),
+      size = character(),
+      file_type = character(),
+      base_path = character(),
+      stringsAsFactors=FALSE)
     )
-    }))
+  }
 
-    # Convert to data frame
-    df <- as.data.frame(df, stringsAsFactors = FALSE)
-
-    # Print the result
-    return(df)
+    final_func <- by(getRes$hits$hits, 1:nrow(getRes$hits$hits), function(row) {
+        src <- row$`_source`
+    file_type_name <- as.character(paste0(" ", src$entity_name))
+    if (identical(src$entity_type, "folder")) {
+      file_type_name <- as.character(paste0(" ",src$entity_name))
+    }
+    de <- data.frame(
+      file_name = file_type_name,
+      last_modified = ifelse(identical(as.character(src$size), as.character(src$modified_date)), "-", as.character(src$modified_date)), 
+      size = ifelse(identical(as.character(src$size), as.character(src$modified_date)), "-", paste0(round(src$size / 1024, 2), " KB")),
+      file_name_correct = src$entity_name, 
+      file_type = src$entity_type, 
+      base_path = sub_path, stringsAsFactors=FALSE
+    )
+    de
+  })
+  final_df <- do.call(rbind, final_func)
+    return(final_df)
 }
 
 prepareProjectData <- function(project_data_df, fileFormats) {
@@ -476,18 +451,17 @@ prepareProjectData <- function(project_data_df, fileFormats) {
   }
   for (row in 1:nrow(project_data_df)) {
     fileName <- project_data_df[row, 'file_name']
-    size_value <- as.character(project_data_df[row, 'size'])
-    fileExt <- file_ext(fileName)
+    fileExt <- file_ext(fileName)          
     if (grepl("TB", project_data_df[row, 'size'])) {
-      project_data_df[row, 'size'] = as.numeric(strsplit(size_value, "TB")[1]) * 1000 * 1000 * 1000 * 1000
+      project_data_df[row, 'size'] = as.numeric(strsplit(project_data_df[row, 'size'], "TB")[1]) * 1000 * 1000 * 1000 * 1000
     } else if (grepl("GB", project_data_df[row, 'size'])) {
-      project_data_df[row, 'size'] = as.numeric(strsplit(size_value, "GB")[1]) * 1000 * 1000 * 1000
+      project_data_df[row, 'size'] = as.numeric(strsplit(project_data_df[row, 'size'], "GB")[1]) * 1000 * 1000 * 1000
     } else if (grepl("MB", project_data_df[row, 'size'])) {
-      project_data_df[row, 'size'] = as.numeric(strsplit(size_value, "MB")[1]) * 1000 * 1000
+      project_data_df[row, 'size'] = as.numeric(strsplit(project_data_df[row, 'size'], "MB")[1]) * 1000 * 1000
     } else if (grepl("KB", project_data_df[row, 'size'])) {
-      project_data_df[row, 'size'] = as.numeric(strsplit(size_value, "KB")[1]) * 1000
+      project_data_df[row, 'size'] = as.numeric(strsplit(project_data_df[row, 'size'], "KB")[1]) * 1000
     } else if (grepl("B", project_data_df[row, 'size'])) {
-      project_data_df[row, 'size'] = as.numeric(strsplit(size_value, "B")[1])
+      project_data_df[row, 'size'] = as.numeric(strsplit(project_data_df[row, 'size'], "B")[1])
     }
   }
   project_data_df$size <- as.numeric(project_data_df$size)
