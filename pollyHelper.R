@@ -454,10 +454,10 @@ getAllProjectFilesAndFolders <- function(upload_env1, upload_workspace_id1, poll
     }
     list(
         file_name = file_type_name,
-        last_modified = ifelse(is.null(row$attributes$last_modified) || length(row$attributes$last_modified) == 0, NA, as.character(row$attributes$last_modified)),
-        size = ifelse(is.null(row$attributes$size), NA, as.character(row$attributes$size)),
-        file_type = ifelse(is.null(row$type), NA, as.character(row$type)),
-        file_name_correct = ifelse(is.null(row$attributes$file_name), NA, as.character(row$attributes$file_name)), 
+        last_modified = ifelse(is.null(row$attributes$last_modified) || length(row$attributes$last_modified) == 0, "-", row$attributes$last_modified),
+        size = ifelse(is.null(row$attributes$size), "-", row$attributes$size),
+        file_type = ifelse(is.null(row$type), "-", row$type),
+        file_name_correct = ifelse(is.null(row$attributes$file_name), "-", row$attributes$file_name),
         base_path = sub_path, stringsAsFactors=FALSE
     )
     }))
