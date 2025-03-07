@@ -476,17 +476,18 @@ prepareProjectData <- function(project_data_df, fileFormats) {
   }
   for (row in 1:nrow(project_data_df)) {
     fileName <- project_data_df[row, 'file_name']
-    fileExt <- file_ext(fileName)          
+    size_value <- as.character(project_data_df[row, 'size'])
+    fileExt <- file_ext(fileName)
     if (grepl("TB", project_data_df[row, 'size'])) {
-      project_data_df[row, 'size'] = as.numeric(strsplit(project_data_df[row, 'size'], "TB")[1]) * 1000 * 1000 * 1000 * 1000
+      project_data_df[row, 'size'] = as.numeric(strsplit(size_value, "TB")[1]) * 1000 * 1000 * 1000 * 1000
     } else if (grepl("GB", project_data_df[row, 'size'])) {
-      project_data_df[row, 'size'] = as.numeric(strsplit(project_data_df[row, 'size'], "GB")[1]) * 1000 * 1000 * 1000
+      project_data_df[row, 'size'] = as.numeric(strsplit(size_value, "GB")[1]) * 1000 * 1000 * 1000
     } else if (grepl("MB", project_data_df[row, 'size'])) {
-      project_data_df[row, 'size'] = as.numeric(strsplit(project_data_df[row, 'size'], "MB")[1]) * 1000 * 1000
+      project_data_df[row, 'size'] = as.numeric(strsplit(size_value, "MB")[1]) * 1000 * 1000
     } else if (grepl("KB", project_data_df[row, 'size'])) {
-      project_data_df[row, 'size'] = as.numeric(strsplit(project_data_df[row, 'size'], "KB")[1]) * 1000
+      project_data_df[row, 'size'] = as.numeric(strsplit(size_value, "KB")[1]) * 1000
     } else if (grepl("B", project_data_df[row, 'size'])) {
-      project_data_df[row, 'size'] = as.numeric(strsplit(project_data_df[row, 'size'], "B")[1])
+      project_data_df[row, 'size'] = as.numeric(strsplit(size_value, "B")[1])
     }
   }
   project_data_df$size <- as.numeric(project_data_df$size)
