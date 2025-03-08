@@ -432,10 +432,10 @@ getAllProjectFilesAndFolders <- function(upload_env1, upload_workspace_id1, poll
     }
     de <- data.frame(
       file_name = file_type_name,
-      last_modified = ifelse(identical(as.character(src$size), as.character(src$modified_date)), "-", as.character(src$modified_date)), 
+      last_modified = ifelse(identical(as.character(src$size), as.character(src$modified_date)), "-", src$modified_date), 
       size = ifelse(identical(as.character(src$size), as.character(src$modified_date)), "-", paste0(round(src$size / 1024, 2), " KB")),
       file_name_correct = src$entity_name, 
-      file_type = src$entity_type, 
+      file_type = ifelse(identical(src$entity_type, "folder"), "folder", "file"), 
       base_path = sub_path, stringsAsFactors=FALSE
     )
     de
