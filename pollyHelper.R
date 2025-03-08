@@ -426,15 +426,15 @@ getAllProjectFilesAndFolders <- function(upload_env1, upload_workspace_id1, poll
 
     final_func <- by(getRes$hits$hits, 1:nrow(getRes$hits$hits), function(row) {
         src <- row$`_source`
-    file_type_name <- as.character(paste0(" ", src$entity_name))
+    file_type_name <- as.character(paste0(icon("file", lib = "glyphicon", class="project-files-size"), " ", src$entity_name))
     if (identical(src$entity_type, "folder")) {
-      file_type_name <- as.character(paste0(" ",src$entity_name))
+      file_type_name <- as.character(paste0(icon("folder-close", lib = "glyphicon", class="project-files-size"), " ",src$entity_name))
     }
     de <- data.frame(
       file_name = file_type_name,
-      last_modified = ifelse(identical(as.character(src$size), as.character(src$modified_date)), "-", src$modified_date), 
-      size = ifelse(identical(as.character(src$size), as.character(src$modified_date)), "-", paste0(round(src$size / 1024, 2), " KB")),
-      file_name_correct = src$entity_name, 
+      last_modified = ifelse(identical(as.character(src$size), as.character(src$modified_date)), "-", as.character(src$modified_date)), 
+      size = ifelse(identical(as.character(src$size), as.character(src$modified_date)), "-", as.character(paste0(round(src$size / 1024, 2), " KB"))),
+      file_name_correct = as.character(src$entity_name), 
       file_type = ifelse(identical(src$entity_type, "folder"), "folder", "file"), 
       base_path = sub_path, stringsAsFactors=FALSE
     )
