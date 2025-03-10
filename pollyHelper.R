@@ -361,8 +361,11 @@ getAllProjectFilesAndFolders <- function(upload_env1, upload_workspace_id1, poll
   apiKey <- Sys.getenv("POLLY_API_KEY")  # Get API key from environment variable
 
   requestUrl <- paste0(apiUrl, OS_SEP, 'workspaces', OS_SEP, upload_workspace_id1, OS_SEP, '_search')
-
-  print(requestUrl)
+  new_path <- if (sub_path == "/") {
+    paste0(upload_workspace_id1, "/")
+  } else {
+    paste0(upload_workspace_id1, "/", gsub("^/|/$", "", URLencode(sub_path)), "/")
+  }
 
   payload <- list(
     from = 0,
@@ -378,7 +381,7 @@ getAllProjectFilesAndFolders <- function(upload_env1, upload_workspace_id1, poll
               must = list(
                 list(term = list(`_index` = list(value = "{document_index}"))),
                 list(term = list(workspace_id = list(value = upload_workspace_id1))),
-                list(term = list(parent_folder_name = list(value = paste0(upload_workspace_id1, URLencode(sub_path))))),
+                list(term = list(parent_folder_name = list(value = new_path))),
                 list(bool = list(
                   should = list(
                     list(terms = list(entity_type = c("notebook", "file", "folder")))
@@ -1164,29 +1167,26 @@ storeVersionInPolly <- function(polly_run_id, pollyCookies, parent_state_id, onB
       options( scipen = 999 )
 
       postUrl <- paste0(apiUrl, '/uistores')
-        postBody <- list(
-            data = list(
-                id = unbox("uistore"),
-                type = unbox("uistore"),
-                attributes = list(
-                    runid = unbox(polly_run_id),
-                    version_name = unbox(verionName),
-                    parent_version = unbox(paste0(polly_run_id, '-', parent_state_id))
-                )
-            )
-        )
+      postBody <- list(
+          data = list(
+              id = unbox("uistore"),
+              type = unbox("uistore"),
+              attributes = list(
+                  runid = unbox(polly_run_id),
+                  version_name = unbox(verionName),
+                  parent_version = unbox(paste0(polly_run_id, '-', parent_state_id))
+              )
+          )
+      )
 
       apiKey <- Sys.getenv("POLLY_API_KEY")  # Get API key from environment variable
-
-      # requestUrl <- paste0(apiUrl, '/me')
-      # getRes <- fromJSON(content(GET(requestUrl, add_headers(`X-API-Key` = apiKey)), "text"))
       
-      postRes <- httr::content(httr::POST(
+      postRes <- fromJSON(httr::content(httr::POST(
           postUrl, 
           body = toJSON(postBody, auto_unbox = TRUE), 
           encode = "json",
           httr::add_headers(`X-API-Key` = apiKey, `Content-Type` = "application/vnd.api+json")
-      ))
+      ), "text"))
       
       new_version_id <- postRes$data$id  # New response format
 
@@ -1545,13 +1545,13 @@ pollyEnvSnapShot <- function(developerMode = TRUE) {
       myCommand <- paste0("sha1sum config.yml pollyHelper.R cwfHelper.R > pollyrhelper_user.txt")
       system(myCommand)
       system("mv config.yml .circleci/config.yml")
-      system("curl https://bitbucket.org/elucidatainc/pollyrhelper/raw/production/pollyrhelper_dev.txt > pollyrhelper_dev.txt")
+      system("curl https://github.com/ElucidataInc/pollyRHelper/blob/production/pollyrhelper_dev.txt > pollyrhelper_dev.txt")
       pollyHelperToUpdate <- system("cmp --silent   pollyrhelper_dev.txt pollyrhelper_user.txt || echo 'TRUE'", intern = TRUE)
       if (identical(pollyHelperToUpdate, "TRUE")) {
         print("There is an update in the polly integration. Updating...!")
-        system("curl https://bitbucket.org/elucidatainc/pollyrhelper/raw/production/pollyHelper.R > pollyHelper.R")
-        system("curl https://bitbucket.org/elucidatainc/pollyrhelper/raw/production/config.yml > .circleci/config.yml")
-        system("curl https://bitbucket.org/elucidatainc/pollyrhelper/raw/production/cwfHelper.R > cwfHelper.R")
+        system("curl https://github.com/ElucidataInc/pollyRHelper/blob/production/pollyHelper.R > pollyHelper.R")
+        system("curl https://github.com/ElucidataInc/pollyRHelper/blob/production/config.yml > .circleci/config.yml")
+        system("curl https://github.com/ElucidataInc/pollyRHelper/blob/production/cwfHelper.R > cwfHelper.R")
       }
       system("rm pollyrhelper_dev.txt pollyrhelper_user.txt")
     }
