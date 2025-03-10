@@ -349,19 +349,74 @@ getAllProjectFiles <- function(upload_env1, upload_run_id1, pollyCookies) {
 
 getAllProjectFilesAndFolders <- function(upload_env1, upload_workspace_id1, pollyCookies, sub_path = "/") {
   if (upload_env1 == 'prod') {
-    apiUrl <- 'https://v2.api.polly.elucidata.io'
+    apiUrl <- 'https://apis.polly.elucidata.io/mithoo'
   } else if (upload_env1 == 'test') {
-    apiUrl <- 'https://v2.api.testpolly.elucidata.io'
+    apiUrl <- 'https://apis.testpolly.elucidata.io/mithoo'
   } else if (upload_env1 == 'eupolly') {
-    apiUrl <- 'https://v2.api.eu-polly.elucidata.io'
+    apiUrl <- 'https://apis.eu-polly.elucidata.io'
   } else {
-    apiUrl <- 'https://v2.api.devpolly.elucidata.io'
+    apiUrl <- 'https://apis.devpolly.elucidata.io/mithoo'
   }
 
-  requestUrl <- paste0(apiUrl, OS_SEP, 'projects', OS_SEP, upload_workspace_id1, OS_SEP, 'files', URLencode(sub_path))
-  getRes <- fromJSON(httr::content(httr::GET( requestUrl, httr::add_headers('Content-Type' = 'application/vnd.api+json'), httr::set_cookies(unlist(fromJSON(pollyCookies)))), "text"))  
-  
-  if (identical(nrow(getRes$data), NULL) || nrow(getRes$data) == 0) {
+  apiKey <- Sys.getenv("POLLY_API_KEY")  # Get API key from environment variable
+
+  requestUrl <- paste0(apiUrl, OS_SEP, 'workspaces', OS_SEP, upload_workspace_id1, OS_SEP, '_search')
+  new_path <- if (sub_path == "/") {
+    paste0(upload_workspace_id1, "/")
+  } else {
+    paste0(upload_workspace_id1, "/", gsub("^/|/$", "", URLencode(sub_path)), "/")
+  }
+
+  payload <- list(
+    from = 0,
+    size = 20,
+    sort = list(
+      list("entity_name.keyword" = list(order = "asc"))
+    ),
+    query = list(
+      bool = list(
+        should = list(
+          list(
+            bool = list(
+              must = list(
+                list(term = list(`_index` = list(value = "{document_index}"))),
+                list(term = list(workspace_id = list(value = upload_workspace_id1))),
+                list(term = list(parent_folder_name = list(value = new_path))),
+                list(bool = list(
+                  should = list(
+                    list(terms = list(entity_type = c("notebook", "file", "folder")))
+                  )
+                ))
+              )
+            )
+          ),
+          list(
+            bool = list(
+              must = list(
+                list(term = list(`_index` = list(value = "{workspace_index}"))),
+                list(nested = list(
+                  path = "permissions",
+                  query = list(
+                    match = list(`permissions.user_id` = "{user_id}")
+                  )
+                ))
+              )
+            )
+          )
+        )
+      )
+    )
+  )
+
+
+  getRes <- fromJSON(httr::content(httr::POST(
+          requestUrl, 
+          body = toJSON(payload, auto_unbox = TRUE), 
+          encode = "json",
+          httr::add_headers(`X-API-Key` = apiKey, `Content-Type` = "application/vnd.api+json")
+      ), "text"))
+
+      if (identical(nrow(getRes$hits$hits), NULL) || nrow(getRes$hits$hits) == 0) {
     return (
       data.frame(file_name = character(),
       last_modified = character(),
@@ -371,23 +426,25 @@ getAllProjectFilesAndFolders <- function(upload_env1, upload_workspace_id1, poll
       stringsAsFactors=FALSE)
     )
   }
-  final_func <- by(getRes$data, 1:nrow(getRes$data), function(row) {
-    file_type_name <- as.character(paste0(icon("file", lib = "glyphicon", class="project-files-size"), " ", row$attributes$file_name))
-    if (identical(row$type, "folder")) {
-      file_type_name <- as.character(paste0(icon("folder-close", lib = "glyphicon", class="project-files-size"), " ",row$attributes$file_name))
+
+    final_func <- by(getRes$hits$hits, 1:nrow(getRes$hits$hits), function(row) {
+        src <- row$`_source`
+    file_type_name <- as.character(paste0(icon("file", lib = "glyphicon", class="project-files-size"), " ", src$entity_name))
+    if (identical(src$entity_type, "folder")) {
+      file_type_name <- as.character(paste0(icon("folder-close", lib = "glyphicon", class="project-files-size"), " ",src$entity_name))
     }
     de <- data.frame(
       file_name = file_type_name,
-      last_modified = row$attributes$last_modified, 
-      size = row$attributes$size,
-      file_name_correct = row$attributes$file_name, 
-      file_type = row$type, 
+      last_modified = ifelse(identical(as.character(src$size), as.character(src$modified_date)), "-", as.character(src$modified_date)), 
+      size = ifelse(identical(as.character(src$size), as.character(src$modified_date)), "-", as.character(paste0(round(src$size / 1024, 2), " KB"))),
+      file_name_correct = as.character(src$entity_name), 
+      file_type = ifelse(identical(src$entity_type, "folder"), "folder", "file"), 
       base_path = sub_path, stringsAsFactors=FALSE
     )
     de
   })
   final_df <- do.call(rbind, final_func)
-  return (final_df)
+    return(final_df)
 }
 
 prepareProjectData <- function(project_data_df, fileFormats) {
@@ -491,18 +548,32 @@ pollyEventInit <- function(session, input, output, variableList, reactivedata,
       runningEnv <<- parseQueryString(session$clientData$url_search)$env
       if (IS_SERVER) {
         if (identical(runningEnv, 'prod')) {
-          apiUrl <- 'https://api.polly.elucidata.io'
+          apiUrl <- 'https://apis.polly.elucidata.io/auth'
         } else if (runningEnv == 'test') {
-          apiUrl <- 'https://api.testpolly.elucidata.io'
+          apiUrl <- 'https://apis.testpolly.elucidata.io/auth'
         } else if (runningEnv == 'eupolly') {
-          apiUrl <- 'https://api.eu-polly.elucidata.io'
+          apiUrl <- 'https://apis.eu-polly.elucidata.io/auth'
         } else {
-          apiUrl <- 'https://api.devpolly.elucidata.io'
+          apiUrl <- 'https://apis.devpolly.elucidata.io/auth'
         }
-        requestUrl <- paste0(apiUrl, OS_SEP, 'me')
-        getRes <- fromJSON(httr::content(httr::GET( requestUrl, httr::set_cookies(unlist(fromJSON(input$pollyCookies)))), "text"))
+
+        apiKey <- Sys.getenv("POLLY_API_KEY")  # Get API key from environment variable
+
+        requestUrl <- paste0(apiUrl, '/me')
+        getRes <- fromJSON(content(GET(requestUrl, add_headers(`X-API-Key` = apiKey)), "text"))
+
         trialEnabled <- getRes$organization_details$licenses[[1]]$is_trial
         trialDataSet <- NULL
+
+        # if (identical(trialEnabled, TRUE)) {
+        #   pollyRunId <- parseQueryString(session$clientData$url_search)$run_id
+        #   requestUrl <- paste0(apiUrl, OS_SEP, 'run?id=', pollyRunId, '&state=detail')
+        #   getRes <- fromJSON(content(GET(requestUrl, add_headers(`X-API-Key` = apiKey)), "text"))
+          
+        #   if (identical(grepl('demo#', getRes$run_type), TRUE)) {
+        #     trialDataSet <- strsplit(getRes$run_type, "demo#")[[1]][[2]]
+        #   }
+        # }
         if (identical(trialEnabled, TRUE)) {
           pollyRunId <- parseQueryString(session$clientData$url_search)$run_id
           requestUrl <- paste0(apiUrl, OS_SEP, 'run?id=', pollyRunId, '&state=detail')
@@ -1084,23 +1155,56 @@ storeVersionInPolly <- function(polly_run_id, pollyCookies, parent_state_id, onB
     apiUrl <- NULL
     if ( !length(polly_run_id) == 0 && !length(pollyCookies) == 0 &&  !length(parent_state_id) == 0) {
       if (enviro == 'prod') {
-        apiUrl <- 'https://api.polly.elucidata.io'
+        apiUrl <- 'https://apis.polly.elucidata.io/mithoo-api'
       } else if (enviro == 'test') {
-        apiUrl <- 'https://api.testpolly.elucidata.io'
+        apiUrl <- 'https://apis.testpolly.elucidata.io/mithoo-api'
       } else if (enviro == 'eupolly') {
-        apiUrl <- 'https://api.eu-polly.elucidata.io'
+        apiUrl <- 'https://apis.eu-polly.elucidata.io/mithoo-api'
       } else {
-        apiUrl <- 'https://api.devpolly.elucidata.io'
+        apiUrl <- 'https://apis.devpolly.elucidata.io/mithoo-api'
       }
 
       options( scipen = 999 )
 
       postUrl <- paste0(apiUrl, '/uistores')
-      postBody = list(runid = unbox(polly_run_id), version_name = unbox(verionName), parent_version = unbox(paste0(polly_run_id, '-', parent_state_id)))
-      postRes <- httr::content(httr::POST( postUrl, body = toJSON(list(payload = unbox(toString(toJSON(postBody))))), httr::set_cookies(unlist(fromJSON(pollyCookies)))))
-      patchReqBody <- list(storageId = unbox(strsplit(onBookmarkedState, "_state_id_=")[[1]][2]), storageMedium = unbox('shiny'), storageData = bookmarkedValues)
-      patchUrl <- paste0(apiUrl, '/uistores/app-state/', postRes$data$version)
-      patchRes <- httr::PATCH(patchUrl, body = toJSON(list(payload = unbox(toString(toJSON(patchReqBody))))), httr::set_cookies(unlist(fromJSON(pollyCookies))))
+      postBody <- list(
+          data = list(
+              id = unbox("uistore"),
+              type = unbox("uistore"),
+              attributes = list(
+                  runid = unbox(polly_run_id),
+                  version_name = unbox(verionName),
+                  parent_version = unbox(paste0(polly_run_id, '-', parent_state_id))
+              )
+          )
+      )
+
+      apiKey <- Sys.getenv("POLLY_API_KEY")  # Get API key from environment variable
+      
+      postRes <- fromJSON(httr::content(httr::POST(
+          postUrl, 
+          body = toJSON(postBody, auto_unbox = TRUE), 
+          encode = "json",
+          httr::add_headers(`X-API-Key` = apiKey, `Content-Type` = "application/vnd.api+json")
+      ), "text"))
+      
+      new_version_id <- postRes$data$id  # New response format
+
+      # Construct PATCH request body
+      patchReqBody <- list(
+          storageId = unbox(strsplit(onBookmarkedState, "_state_id_=")[[1]][2]),
+          storageMedium = unbox('shiny'),
+          storageData = bookmarkedValues
+      )
+
+      patchUrl <- paste0(apiUrl, '/uistores/app-state/', new_version_id)
+      patchRes <- httr::PATCH(
+          patchUrl, 
+          body = toJSON(list(payload = unbox(toString(toJSON(patchReqBody))))), 
+          encode = "json",
+          httr::add_headers(`X-API-Key` = apiKey, `Content-Type` = "application/vnd.api+json")
+      )
+
       if (length(httr::content(patchRes)$version_id) != 0) {
         tmp <- getOption("parentStateId")
         tmp[[polly_run_id]] <- strsplit(httr::content(patchRes)$version_id, '-')[[1]][2]
@@ -1441,13 +1545,13 @@ pollyEnvSnapShot <- function(developerMode = TRUE) {
       myCommand <- paste0("sha1sum config.yml pollyHelper.R cwfHelper.R > pollyrhelper_user.txt")
       system(myCommand)
       system("mv config.yml .circleci/config.yml")
-      system("curl https://bitbucket.org/elucidatainc/pollyrhelper/raw/production/pollyrhelper_dev.txt > pollyrhelper_dev.txt")
+      system("curl https://github.com/ElucidataInc/pollyRHelper/blob/production/pollyrhelper_dev.txt > pollyrhelper_dev.txt")
       pollyHelperToUpdate <- system("cmp --silent   pollyrhelper_dev.txt pollyrhelper_user.txt || echo 'TRUE'", intern = TRUE)
       if (identical(pollyHelperToUpdate, "TRUE")) {
         print("There is an update in the polly integration. Updating...!")
-        system("curl https://bitbucket.org/elucidatainc/pollyrhelper/raw/production/pollyHelper.R > pollyHelper.R")
-        system("curl https://bitbucket.org/elucidatainc/pollyrhelper/raw/production/config.yml > .circleci/config.yml")
-        system("curl https://bitbucket.org/elucidatainc/pollyrhelper/raw/production/cwfHelper.R > cwfHelper.R")
+        system("curl https://github.com/ElucidataInc/pollyRHelper/blob/production/pollyHelper.R > pollyHelper.R")
+        system("curl https://github.com/ElucidataInc/pollyRHelper/blob/production/config.yml > .circleci/config.yml")
+        system("curl https://github.com/ElucidataInc/pollyRHelper/blob/production/cwfHelper.R > cwfHelper.R")
       }
       system("rm pollyrhelper_dev.txt pollyrhelper_user.txt")
     }
