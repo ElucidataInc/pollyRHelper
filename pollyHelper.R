@@ -376,7 +376,7 @@ getAllProjectFilesAndFolders <- function(upload_env1, upload_workspace_id1, poll
               must = list(
                 list(term = list(`_index` = list(value = "{document_index}"))),
                 list(term = list(workspace_id = list(value = upload_workspace_id1))),
-                list(term = list(parent_folder_name = list(value = paste0(upload_workspace_id1, URLencode(sub_path))))),
+                list(term = list(parent_folder_name = list(value = paste0(upload_workspace_id1, "/", gsub("^/|/$", "", URLencode(sub_path)), "/")))),
                 list(bool = list(
                   should = list(
                     list(terms = list(entity_type = c("notebook", "file", "folder")))
