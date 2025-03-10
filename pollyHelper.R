@@ -361,6 +361,11 @@ getAllProjectFilesAndFolders <- function(upload_env1, upload_workspace_id1, poll
   apiKey <- Sys.getenv("POLLY_API_KEY")  # Get API key from environment variable
 
   requestUrl <- paste0(apiUrl, OS_SEP, 'workspaces', OS_SEP, upload_workspace_id1, OS_SEP, '_search')
+  new_path <- if (sub_path == "/") {
+    paste0(upload_workspace_id1, "/")
+  } else {
+    paste0(upload_workspace_id1, "/", gsub("^/|/$", "", URLencode(sub_path)), "/")
+  }
 
   payload <- list(
     from = 0,
@@ -376,7 +381,7 @@ getAllProjectFilesAndFolders <- function(upload_env1, upload_workspace_id1, poll
               must = list(
                 list(term = list(`_index` = list(value = "{document_index}"))),
                 list(term = list(workspace_id = list(value = upload_workspace_id1))),
-                list(term = list(parent_folder_name = list(value = paste0(upload_workspace_id1, "/", gsub("^/|/$", "", URLencode(sub_path)), "/")))),
+                list(term = list(parent_folder_name = list(value = new_path))),
                 list(bool = list(
                   should = list(
                     list(terms = list(entity_type = c("notebook", "file", "folder")))
