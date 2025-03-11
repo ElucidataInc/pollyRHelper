@@ -543,63 +543,9 @@ pollyEventInit <- function(session, input, output, variableList, reactivedata,
    observeEvent(input$pollyCookies, {
     # higher priprity function which get called before users observe
     observe({
-      # checking if the trail lisence part
       
       runningEnv <<- parseQueryString(session$clientData$url_search)$env
-      if (IS_SERVER) {
-        if (identical(runningEnv, 'prod')) {
-          apiUrl <- 'https://apis.polly.elucidata.io/auth'
-        } else if (runningEnv == 'test') {
-          apiUrl <- 'https://apis.testpolly.elucidata.io/auth'
-        } else if (runningEnv == 'eupolly') {
-          apiUrl <- 'https://apis.eu-polly.elucidata.io/auth'
-        } else {
-          apiUrl <- 'https://apis.devpolly.elucidata.io/auth'
-        }
 
-        apiKey <- Sys.getenv("POLLY_API_KEY")  # Get API key from environment variable
-
-        requestUrl <- paste0(apiUrl, '/me')
-        getRes <- fromJSON(content(GET(requestUrl, add_headers(`X-API-Key` = apiKey)), "text"))
-
-        trialEnabled <- getRes$organization_details$licenses[[1]]$is_trial
-        trialDataSet <- NULL
-
-        # if (identical(trialEnabled, TRUE)) {
-        #   pollyRunId <- parseQueryString(session$clientData$url_search)$run_id
-        #   requestUrl <- paste0(apiUrl, OS_SEP, 'run?id=', pollyRunId, '&state=detail')
-        #   getRes <- fromJSON(content(GET(requestUrl, add_headers(`X-API-Key` = apiKey)), "text"))
-          
-        #   if (identical(grepl('demo#', getRes$run_type), TRUE)) {
-        #     trialDataSet <- strsplit(getRes$run_type, "demo#")[[1]][[2]]
-        #   }
-        # }
-        if (identical(trialEnabled, TRUE)) {
-          pollyRunId <- parseQueryString(session$clientData$url_search)$run_id
-          requestUrl <- paste0(apiUrl, OS_SEP, 'run?id=', pollyRunId, '&state=detail')
-          getRes <- fromJSON(httr::content(httr::GET( requestUrl, httr::set_cookies(unlist(fromJSON(input$pollyCookies)))), "text"))
-          if (identical(grepl('demo#', getRes$run_type), TRUE)) {
-            trialDataSet <- strsplit(getRes$run_type, "demo#")[[1]][[2]]
-          }
-        }
-        
-
-        if (identical(trialEnabled, TRUE)) {
-          if (!identical(trialDataSet, NULL)) {
-            pollyExampleId <- getOption("pollyRunTrialRunExample")
-            js$pollyButtonClick(pollyExampleId)
-            js$pollyMakeIdInvisible(pollyExampleId)
-            pollyInputFileListData <- getOption("pollyRunTrialDisable")
-            for(btn_elm in pollyInputFileListData) {
-              js$pollyUploadDisable(btn_elm)
-            }
-            pollyDisappearButtons <- getOption("pollyRunTrialDisappear")
-            for(btn_rem in pollyDisappearButtons) {
-              js$pollyMakeIdInvisible(btn_rem)
-            }
-          }
-        }
-      }
       if (length(getQueryString()$run_id) != 0) {
         tmp <- getOption("parentStateId")
         tmp[[getQueryString()$run_id]] <- parseQueryString(session$clientData$url_search)$parent_id
