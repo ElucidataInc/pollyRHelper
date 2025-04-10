@@ -1138,10 +1138,15 @@ storeVersionInPolly <- function(polly_run_id, pollyCookies, parent_state_id, onB
 
       # Construct PATCH request body
       patchReqBody <- list(
-          storageId = unbox(strsplit(onBookmarkedState, "_state_id_=")[[1]][2]),
-          storageMedium = unbox('shiny'),
-          storageData = bookmarkedValues
-      )
+          data = list(
+            type = unbox("uistore"),
+            attributes = list(
+              storageId = unbox(strsplit(onBookmarkedState, "_state_id_=")[[1]][2]),
+              storageMedium = unbox('shiny'),
+              storageData = bookmarkedValues
+            )
+          )
+        )
 
       patchUrl <- paste0(apiUrl, '/uistores/app-state/', new_version_id)
       patchRes <- httr::PATCH(
