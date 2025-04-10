@@ -1144,16 +1144,18 @@ storeVersionInPolly <- function(polly_run_id, pollyCookies, parent_state_id, onB
       )
 
       patchUrl <- paste0(apiUrl, '/uistores/app-state/', new_version_id)
-      patchRes <- fromJSON(httr::content(httr::PATCH(
+      patchRes <- httr::PATCH(
           patchUrl, 
-          body = toJSON(list(payload = unbox(toString(toJSON(patchReqBody))))), 
+          body = toJSON(patchReqBody, auto_unbox = TRUE), 
           encode = "json",
-          httr::add_headers(`X-API-Key` = apiKey, `Content-Type` = "application/vnd.api+json"))
-      , "text"))
+          httr::add_headers(`X-API-Key` = apiKey, `Content-Type` = "application/vnd.api+json")
+      )
 
-      if (length(patchRes$version_id) != 0) {
+      status_api = httr::status_code(patchRes)
+
+      if (status_api == 204) {
         tmp <- getOption("parentStateId")
-        tmp[[polly_run_id]] <- strsplit(patchRes$version_id, '-')[[1]][2]
+        tmp[[polly_run_id]] <- strsplit(new_version_id, '-')[[1]][2]
         options(parentStateId = tmp)
       }
       options( scipen = 0 )
