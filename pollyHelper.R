@@ -22,7 +22,7 @@ options(saveFileToPollyLock = NULL)
 runningEnv <<- NULL
 COMMIT_NOW <<- FALSE
 options(LAST_COMMIT_MSG = list())
-bookmarkSavingDir <<- "/srv/bookmarks/shiny/"
+bookmarkSavingDir <<- "/bookmarks/shiny/"
 OS_SEP <<- "/"
 SESSION_RESET <<- TRUE
 TYPE_FILE_PATH = './.server'
