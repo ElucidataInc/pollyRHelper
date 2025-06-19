@@ -1097,72 +1097,43 @@ onBookmarkedCopy <- function(session, input, onBookmarkedState) {
   showModal(bookmarkModel(session, onBookmarkedState))
 }
 
-storeVersionInPolly <- function(polly_run_id, pollyCookies, parent_state_id, onBookmarkedState, bookmarkedValues, enviro = 'test', verionName = 'latest_state') {
+storeVersionInPolly <- function(polly_workspace_id, polly_run_id, onBookmarkedState, bookmarkedValues, enviro = 'test', verionName = 'latest_state') {
     apiUrl <- NULL
-    if ( !length(polly_run_id) == 0 && !length(pollyCookies) == 0 &&  !length(parent_state_id) == 0) {
+    if ( !length(polly_run_id) == 0) {
       if (enviro == 'prod') {
-        apiUrl <- 'https://apis.polly.elucidata.io/mithoo-api'
+        apiUrl <- 'https://apis.polly.elucidata.io'
       } else if (enviro == 'test') {
-        apiUrl <- 'https://apis.testpolly.elucidata.io/mithoo-api'
-      } else if (enviro == 'eupolly') {
-        apiUrl <- 'https://apis.eu-polly.elucidata.io/mithoo-api'
+        apiUrl <- 'https://apis.testpolly.elucidata.io'
       } else {
-        apiUrl <- 'https://apis.devpolly.elucidata.io/mithoo-api'
+        apiUrl <- 'https://apis.devpolly.elucidata.io'
       }
 
       options( scipen = 999 )
+      postUrl <- paste0(apiUrl, '/compute/', polly_workspace_id, '/analysis/', polly_run_id, '/bookmarks')
 
-      postUrl <- paste0(apiUrl, '/uistores')
       postBody <- list(
           data = list(
-              id = unbox("uistore"),
-              type = unbox("uistore"),
+              type = unbox("bookmarks"),
               attributes = list(
-                  runid = unbox(polly_run_id),
-                  version_name = unbox(verionName),
-                  parent_version = unbox(paste0(polly_run_id, '-', parent_state_id))
+                  name = unbox(verionName),
+                  storageId = unbox(strsplit(onBookmarkedState, "_state_id_=")[[1]][2]),
+                  storageMedium = unbox('shiny'),
+                  storageData = bookmarkedValues
               )
           )
       )
 
       apiKey <- Sys.getenv("POLLY_API_KEY")  # Get API key from environment variable
-      
+
       postRes <- fromJSON(httr::content(httr::POST(
           postUrl, 
           body = toJSON(postBody, auto_unbox = TRUE), 
           encode = "json",
           httr::add_headers(`X-API-Key` = apiKey, `Content-Type` = "application/vnd.api+json")
       ), "text"))
-      
+
       new_version_id <- postRes$data$id  # New response format
 
-      # Construct PATCH request body
-      patchReqBody <- list(
-          data = list(
-            type = unbox("uistore"),
-            attributes = list(
-              storageId = unbox(strsplit(onBookmarkedState, "_state_id_=")[[1]][2]),
-              storageMedium = unbox('shiny'),
-              storageData = bookmarkedValues
-            )
-          )
-        )
-
-      patchUrl <- paste0(apiUrl, '/uistores/app-state/', new_version_id)
-      patchRes <- httr::PATCH(
-          patchUrl, 
-          body = toJSON(patchReqBody, auto_unbox = TRUE), 
-          encode = "json",
-          httr::add_headers(`X-API-Key` = apiKey, `Content-Type` = "application/vnd.api+json")
-      )
-
-      status_api = httr::status_code(patchRes)
-
-      if (status_api == 204) {
-        tmp <- getOption("parentStateId")
-        tmp[[polly_run_id]] <- strsplit(new_version_id, '-')[[1]][2]
-        options(parentStateId = tmp)
-      }
       options( scipen = 0 )
       options( digits = 6 )
     }
@@ -1185,13 +1156,16 @@ bookmarkModel <- function(session, state) {
 bookmarkModelInput <- function(session, input) {
   observeEvent(input$bookmark_identifier_ok, {
     runIdPolly <- parseQueryString(session$clientData$url_search)$run_id
+    workspaceIdPolly <- parseQueryString(session$clientData$url_search)$workspace_id
     if (nzchar(input$bookmark_identifier)) {
       if (getOption("LAST_COMMIT_MSG")[[runIdPolly]] != input$bookmark_identifier) {
         COMMIT_NOW <<- TRUE
         if (COMMIT_NOW) {
           COMMIT_NOW <<- FALSE
           runIdPolly <- parseQueryString(session$clientData$url_search)$run_id
-          storeVersionInPolly(runIdPolly, input$pollyCookies, getOption("parentStateId")[[runIdPolly]], getOption("onBookmarkState")[[runIdPolly]], getOption("bookmarkValues")[[runIdPolly]], runningEnv, input$bookmark_identifier)
+
+          storeVersionInPolly(workspaceIdPolly, runIdPolly, getOption("onBookmarkState")[[runIdPolly]], getOption("bookmarkValues")[[runIdPolly]], runningEnv, input$bookmark_identifier)
+
           tmp <- getOption("LAST_COMMIT_MSG")
           tmp[[runIdPolly]] <- input$bookmark_identifier
           options(LAST_COMMIT_MSG = tmp)
